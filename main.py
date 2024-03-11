@@ -206,37 +206,42 @@ async def root():
 
 @app.post("/register")
 async def register(email: str = Form(...), username: str = Form(...),password: str = Form(...), confirmpassword: str = Form(...)):
-    print("Received form data:")
-    print("Email:", email)
-    print("Username:", username)
-    print("Password:", password)
-    print("Confirm Password:", confirmpassword)
-    if not email or not username or not password or not confirmpassword:
-        return JSONResponse(content={'error': "Missing Fields"}, status_code=422)
+    try:
+        print("Received form data:")
+        print("Email:", email)
+        print("Username:", username)
+        print("Password:", password)
+        print("Confirm Password:", confirmpassword)
+        if not email or not username or not password or not confirmpassword:
+            return JSONResponse(content={'error': "Missing Fields"}, status_code=422)
 
-    if not validate_email(email):
-        return JSONResponse(content={'error': "Please Enter Correct Email"}, status_code=422)
+        if not validate_email(email):
+            return JSONResponse(content={'error': "Please Enter Correct Email"}, status_code=422)
 
-    if len(password) < 8:
-        return JSONResponse(content={'error': "Password length should be more than 8"}, status_code=422)
+        if len(password) < 8:
+            return JSONResponse(content={'error': "Password length should be more than 8"}, status_code=422)
 
-    if password != confirmpassword:
-        return JSONResponse(content={'error': "Password not matched"}, status_code=422)
-    print("Check")
-    cursor = connection.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = %s", (email))
-    user_exists = cursor.fetchone()
-    cursor.close()
-    if user_exists:
-        return JSONResponse(content={'error': "User already exists"}, status_code=500)
-    
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    cursor = connection.cursor()
-    cursor.execute("INSERT INTO users (email, username, password) VALUES (%s, %s, %s)", (email, username, hashed_password))
-    connection.commit()
-    cursor.close()
+        if password != confirmpassword:
+            return JSONResponse(content={'error': "Password not matched"}, status_code=422)
+        print("Check")
+        cursor = connection.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        user_exists = cursor.fetchone()
+        cursor.close()
+        if user_exists:
+            return JSONResponse(content={'error': "User already exists"}, status_code=500)
+        
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        cursor = connection.cursor()
+        cursor.execute("INSERT INTO users (email, username, password) VALUES (%s, %s, %s)", (email, username, hashed_password))
+        connection.commit()
+        cursor.close()
 
-    return JSONResponse(content={'message': "Successfully Registered"}, status_code=200)
+        return JSONResponse(content={'message': "Successfully Registered"}, status_code=200)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': str(e)}, status_code=500)
 
 
 def validate_email(email):
@@ -245,22 +250,29 @@ def validate_email(email):
 
 @app.post("/login")
 async def login(email: str = Form(...), password: str = Form(...)):
-    print("Email:", email)
-    print("Password:", password)
-    if not email or not password:
-        return JSONResponse(content={'error': "Missing Fields"}, status_code=422)
+    try:
+        print("Email:", email)
+        print("Password:", password)
+        if not email or not password:
+            return JSONResponse(content={'error': "Missing Fields"}, status_code=422)
 
-    cursor = connection.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-    user = cursor.fetchone()
-    cursor.close()
+        cursor = connection.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        cursor.close()
 
-    if not user:
-        return JSONResponse(content={'error': "Invalid username or password"}, status_code=401)
+        if not user:
+            return JSONResponse(content={'error': "Invalid username or password"}, status_code=401)
 
-    stored_password = user[3]
-    if bcrypt.checkpw(password.encode('utf-8') , stored_password.encode('utf-8')):
-        return JSONResponse(content={'user_id': user[0]}, status_code=200)
+        stored_password = user[3]
+        if bcrypt.checkpw(password.encode('utf-8') , stored_password.encode('utf-8')):
+            return JSONResponse(content={'user_id': user[0], 'username':user[2]}, status_code=200)
+        else:
+            return JSONResponse(content={'error': "Password not matched"}, status_code=500)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': str(e)}, status_code=500)
 
 def connect_to_mqtt(user_id, ipAddress, port):
 
@@ -382,38 +394,56 @@ async def register_roomused(roomname: str = Form(...), boardid: int = Form(...))
 
 @app.get("/getRooms")
 async def get_rooms():
-    cursor = connection.cursor()
-    cursor.execute("SELECT rooms.id, rooms.roomname, boards.noOfAvailableSwitches,  boards.noOfSwitches, boards.id FROM rooms INNER JOIN boards ON rooms.boardid = boards.id")
-    rooms = cursor.fetchall()
-    cursor.close()
-    print(rooms[0][3]-rooms[0][2])
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT rooms.id, rooms.roomname, boards.noOfAvailableSwitches,  boards.noOfSwitches, boards.id FROM rooms INNER JOIN boards ON rooms.boardid = boards.id")
+        rooms = cursor.fetchall()
+        cursor.close()
+        print(rooms[0][3]-rooms[0][2])
 
-    rooms_list = [{"roomname": room[1], "switches": (room[3]-room[2]), "boardid": room[4]} for room in rooms]
+        rooms_list = [{"id": room[0],"roomname": room[1], "switches": (room[3]-room[2]), "boardid": room[4]} for room in rooms]
+        if not rooms:
+            return JSONResponse(content={'error': "No rooms added"}, status_code=500)
+        return JSONResponse(content={'rooms': rooms_list}, status_code=200)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': str(e)}, status_code=500)
 
-    return JSONResponse(content={'rooms': rooms_list}, status_code=200)
 
 
 @app.post("/getSwitches")
 async def get_switches(boardId: int = Form(...)):
-    cursor = connection.cursor()
-    cursor.execute("SELECT id, switchId, name, state FROM switches WHERE boardid = %s", (boardId,))
-    switches = cursor.fetchall()
-    cursor.close()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT id, switchId, name, state FROM switches WHERE boardid = %s", (boardId,))
+        switches = cursor.fetchall()
+        cursor.close()
 
-    switches_list = [{"id": switch[0], "switchId": switch[1],"name": switch[2], "state": switch[3]} for switch in switches]
-
-    return JSONResponse(content={'switches': switches_list}, status_code=200)
+        switches_list = [{"id": switch[0], "switchId": switch[1],"name": switch[2], "state": switch[3]} for switch in switches]
+        if not switches:
+            return JSONResponse(content={'error': "No switches added"}, status_code=500)
+        return JSONResponse(content={'switches': switches_list}, status_code=200)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': str(e)}, status_code=500)
 
 @app.get("/getAvailableBoards")
 async def get_available_boards():
-    cursor = connection.cursor()
-    cursor.execute("SELECT boards.id, boards.boardname FROM boards LEFT JOIN rooms ON boards.id = rooms.boardid WHERE rooms.boardid IS NULL")
-    available_boards = cursor.fetchall()
-    cursor.close()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT boards.id, boards.boardname FROM boards LEFT JOIN rooms ON boards.id = rooms.boardid WHERE rooms.boardid IS NULL")
+        available_boards = cursor.fetchall()
+        cursor.close()
 
-    available_boards_list = [{"id": board[0], "boardname": board[1]} for board in available_boards]
+        available_boards_list = [{"id": board[0], "boardname": board[1]} for board in available_boards]
 
-    return JSONResponse(content={'boards': available_boards_list}, status_code=200)
+        return JSONResponse(content={'boards': available_boards_list}, status_code=200)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': str(e)}, status_code=500)
 
 @app.post("/insertRoom")
 async def insert_room(roomname: str = Form(...), boardid: int = Form(...)):
@@ -427,7 +457,7 @@ async def insert_room(roomname: str = Form(...), boardid: int = Form(...)):
     except Exception as e:
         traceback_str = traceback.format_exc()
         print("Error: ", traceback_str)
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(content={'error': "Error while adding room"}, status_code=500)
 
 # @app.post("/getAvailableSwitches")
 # async def get_switches(boardId: int = Form(...)):
@@ -442,18 +472,22 @@ async def insert_room(roomname: str = Form(...), boardid: int = Form(...)):
 
 @app.post("/getAvailableSwitches")
 async def get_switches(boardId: int = Form(...)):
-    cursor = connection.cursor()
-    cursor.execute("SELECT id, noOfSwitches, noOfAvailableSwitches FROM boards WHERE id = %s", (boardId,))
-    switch = cursor.fetchone()
-    cursor.close()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT id, noOfSwitches, noOfAvailableSwitches FROM boards WHERE id = %s", (boardId,))
+        switch = cursor.fetchone()
+        cursor.close()
 
-    print(switch)
+        print(switch)
 
-    switches_list = [{"id": switch[0],"noOfSwitches": switch[1], "noOfAvailableSwitches": switch[2]}]
-
-
-
-    return JSONResponse(content={'switches': switches_list}, status_code=200)
+        switches_list = [{"id": switch[0],"noOfSwitches": switch[1], "noOfAvailableSwitches": switch[2]}]
+        if not switch:
+            return JSONResponse(content={'error': "No Switches Available"}, status_code=500)
+        return JSONResponse(content={'switches': switches_list}, status_code=200)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': str(e)}, status_code=500)
 
 @app.post("/insertSwitch")
 async def insert_switch(switchId: int = Form(...), name: str = Form(...), boardId: int = Form(...)):
@@ -468,7 +502,64 @@ async def insert_switch(switchId: int = Form(...), name: str = Form(...), boardI
     except Exception as e:
         traceback_str = traceback.format_exc()
         print("Error: ", traceback_str)
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(content={'error': "Getting error while adding switch"}, status_code=500)
+
+
+@app.post("/removeSwitch")
+async def remove_switch(switchId: int = Form(...), boardId: int = Form(...)):
+    print(switchId)
+    print(boardId)
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM switches WHERE switchId = %s AND boardid = %s", (switchId, boardId))
+        connection.commit()
+        cursor.execute("UPDATE boards SET noOfAvailableSwitches = noOfAvailableSwitches + 1 WHERE id = %s", (boardId,))
+        connection.commit()
+        cursor.close()
+        return JSONResponse(content={'message': "Switch removed successfully"}, status_code=200)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': "Getting error while removing switch"}, status_code=500)
+
+@app.get("/fetchAllSwitchesStatistics")
+async def fetch_all_switches_statistics():
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT rooms.id, rooms.boardid, rooms.roomname, switches.name, switches.state FROM rooms INNER JOIN switches ON rooms.boardid = switches.boardid")
+        switches_statistics = cursor.fetchall()
+        cursor.close()
+
+        switches_statistics_list = [{"id": row[0], "boardid": row[1], "roomname": row[2], "switch_name": row[3], "state": row[4]} for row in switches_statistics]
+        if not switches_statistics:
+            return JSONResponse(content={'error': "No rooms and switches added"}, status_code=500)
+        return JSONResponse(content={'switches_statistics': switches_statistics_list}, status_code=200)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': str(e)}, status_code=500)
+
+@app.post("/deleteRoom")
+async def delete_room(roomId: int = Form(...), boardId: int = Form(...)):
+    print(roomId)
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM switches WHERE boardid = (SELECT boardid FROM rooms WHERE id = %s)", (roomId,))
+        connection.commit()
+        cursor.execute("DELETE FROM rooms WHERE id = %s", (roomId,))
+        connection.commit()
+        cursor.execute("UPDATE boards SET noOfAvailableSwitches = 4 WHERE id = %s", (boardId,))
+        connection.commit()
+        cursor.close()
+        
+        return JSONResponse(content={'message': "Room and associated switches deleted successfully"}, status_code=200)
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print("Error: ", traceback_str)
+        return JSONResponse(content={'error': "Getting error while deleting room"}, status_code=500)
+
+
+
 
 
 
