@@ -325,14 +325,14 @@ async def switch(user_id : int = Form(...), switchNum : int = Form(...), switchI
         cursor = connection.cursor()
         cursor.execute("SELECT switches.id, switches.state, boards.boardname, boards.id FROM switches INNER JOIN boards ON switches.boardid = boards.id WHERE switches.id = %s AND switches.switchId = %s", (switchNum, switchId))
         switch = cursor.fetchone()
-
+        print(message)
         new_state = not switch[1]
         cursor.execute("UPDATE switches SET state = %s WHERE id = %s", (new_state, switchNum))
         connection.commit()
         cursor.close()
         print(switch[2])
         prefix = switch[2]+'/switch'
-        send_message(user_id, f'{prefix}/{str(switchId)}',message)
+        send_message(user_id, f'{prefix}{str(switchId)}',message)
         return JSONResponse(content={'message': "Topic Executed"}, status_code=200)
    
     except Exception as e:
